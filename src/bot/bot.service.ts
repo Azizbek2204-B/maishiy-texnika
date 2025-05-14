@@ -1,86 +1,146 @@
 import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
 import { Context, Markup } from "telegraf";
-import { Bot } from "./models/bot.model";
-import { MasterService } from "./master/master.service";
+import { Op } from "sequelize";
 import { Master } from "./models/usta_model";
 
 @Injectable()
 export class BotService {
   constructor(
-    @InjectModel(Bot) private readonly botModel: typeof Bot,
-    private readonly masterService: MasterService,
     @InjectModel(Master) private readonly masterModel: typeof Master
   ) {}
 
   async start(ctx: Context) {
     try {
-      const user_id = ctx.from?.id;
-      const user = await this.botModel.findByPk(user_id);
-      if (!user) {
-        await this.botModel.create({
-          user_id: user_id!,
-          username: ctx.from?.username!,
-          first_name: ctx.from?.first_name!,
-          language_code: ctx.from?.language_code!,
-          role: "",
-        });
-
-        await ctx.replyWithHTML(`Iltimos, kimligingizni belgilang`, {
-          ...Markup.keyboard([
-            Markup.button.text("Master"),
-            Markup.button.text("Mijoz"),
-          ])
-            .oneTime()
-            .resize(),
-        });
-      } else {
-        await ctx.replyWithHTML(`Iltimos, kimligingizni belgilang`, {
-          ...Markup.keyboard([
-            Markup.button.text("Master"),
-            Markup.button.text("Mijoz"),
-          ])
-            .oneTime()
-            .resize(),
-        });
-      }
+      await ctx.replyWithHTML(`Iltimos, quyidagi rolelardan birini tanlang`, {
+        ...Markup.keyboard([["MIJOZ", "USTA"]])
+          .oneTime()
+          .resize(),
+      });
     } catch (error) {
-      console.log(`Error on Start`, error);
-    }
-  }
-
-  async ustaMessage(ctx: Context) {
-    if ("text" in ctx.message!) {
-      const message = ctx.message.text;
-      if (message === "Master") {
-        const user_id = ctx.from?.id;
-        await this.masterModel.create({
-          user_id: user_id!,
-          last_state: "role",
-        });
-        await ctx.replyWithHTML(`O'z yo'nalishni kiriting`, {
-          ...Markup.keyboard([
-            ["Sartaroshxona", "Go'zallik saloni"],
-            ["Zargarlik ustaxonasi", "Soatsoz"],
-            ["Poyabzal ustaxonasi", "..."],
-          ])
-            .oneTime()
-            .resize(),
-        });
-      }
+      console.log(`Error on start`, error);
     }
   }
 
   async onText(ctx: Context) {
-    await this.masterService.start(ctx);
-  }
+    try {
+      if ("text" in ctx.message!) {
+        const id = ctx.from?.id;
+        const master = await this.masterModel.findOne({
+          where: {
+            user_id: id,
+            last_state: { [Op.ne]: "finish" },
+          },
+          order: [["id", "DESC"]],
+        });
+        if (master) {
+          const masterInput = ctx.message.text;
+          switch (master.last_state) {
+            case "specialization":
+              master.specialization = masterInput;
+              master.last_state = "name";
+              await master.save();
+              await ctx.replyWithHTML(`Ismingizni kiriting:`, {
+                ...Markup.removeKeyboard(),
+              });
+              break;
+            case "name":
+              master.name = masterInput;
+              master.last_state = "tel_number";
+              await master.save();
+              await ctx.replyWithHTML(`Telefon raqamingizni kiriting:`, {
+                ...Markup.keyboard([
+                  Markup.button.contactRequest("Telefon raqamni yuborish"),
+                ])
+                  .oneTime()
+                  .resize(),
+              });
+              break;
+            case "ustaxona_nomi":
+              master.ustaxona_nomi = masterInput;
+              master.last_state = "address";
+              await master.save();
+              await ctx.replyWithHTML(
+                `Ishlash joyingizni manzilini kiriting:`,
+                {
+                  ...Markup.removeKeyboard(),
+                }
+              );
+              break;
+            case "address":
+              master.address = masterInput;
+              master.last_state = "landmark";
+              await master.save();
+              await ctx.replyWithHTML(
+                `Ishlash joyingizni mo'ljalini kiriting:`,
+                {
+                  ...Markup.removeKeyboard(),
+                }
+              );
+              break;
+            case "landmark":
+              master.landmark = masterInput;
+              master.last_state = "location";
+              await master.save();
+              await ctx.replyWithHTML(
+                `Ishlash joyingizni lokatsiyasini kiriting:`,
+                {
+                  ...Markup.keyboard([
+                    [Markup.button.locationRequest("Lokatsiya yuborish")],
+                  ]).resize(),
+                }
+              );
+              break;
+            case "start_time":
+              master.start_time = masterInput;
+              master.last_state = "end_time";
+              await master.save();
+              await ctx.replyWithHTML(`Ish tugash vaqtingizni kiriting:`, {
+                ...Markup.removeKeyboard(),
+              });
+              break;
 
-  async cancel(ctx: Context) {
-    await this.masterModel.destroy({
-      where: {
-        user_id: ctx.from?.id,
-      },
-    })
-    return this.onText(ctx);
+            case "end_time":
+              master.start_time = masterInput;
+              master.last_state = "time";
+              await master.save();
+              await ctx.replyWithHTML(
+                `Har bir mijozga ketadigan o'rtacha vaqtni kiriting:`,
+                {
+                  ...Markup.removeKeyboard(),
+                }
+              );
+              break;
+
+            case "time":
+              master.time = masterInput;
+              master.last_state = "finish";
+              await master.save();
+              await ctx.replyWithHTML(
+                `Siz barcha kerakli ma'lumotlarni kiritdingiz`,
+                {
+                  reply_markup: {
+                    inline_keyboard: [
+                      [
+                        {
+                          text: "Tasdiqlash",
+                          callback_data: `con_${master.id}`,
+                        },
+                        {
+                          text: "Bekor qilish",
+                          callback_data: `cancel_${master.id}`,
+                        },
+                      ],
+                    ],
+                  },
+                }
+              );
+              break;
+          }
+        }
+      }
+    } catch (error) {
+      console.log(`Error on text`, error);
+    }
   }
 }

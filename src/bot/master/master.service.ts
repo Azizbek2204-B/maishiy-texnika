@@ -1,8 +1,9 @@
-import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/sequelize";
+import { Injectable } from "@nestjs/common";
+import { InjectBot, On } from "nestjs-telegraf";
+import { BOT_NAME } from "../../app.constants";
+import { Context, Markup, Telegraf } from "telegraf";
 import { Master } from "../models/usta_model";
-import { Context, Markup } from "telegraf";
-import { Op } from "sequelize";
 
 @Injectable()
 export class MasterService {
@@ -10,151 +11,111 @@ export class MasterService {
     @InjectModel(Master) private readonly masterModel: typeof Master
   ) {}
 
-  async start(ctx: Context) {
-    try {
-      const user_id = ctx.from?.id;
-      const master = await this.masterModel.findOne({
-        where: {
-          user_id,
-          last_state: { [Op.ne]: "finish" },
-        },
-      });
-      if (master) {
-        let userInput: any;
-        if ("text" in ctx.message!) {
-          userInput = ctx.message.text;
-        }
-
-        if (userInput === "Saqlash" && master.last_state === "customer_time") {
-          master.last_state = "finish";
-          await master.save();
-          await ctx.replyWithHTML("Ma'lumotlar muvaffaqiyatli saqlandi!", {
-            ...Markup.keyboard([
-              ["Tekshirish", "Bekor qilish"],
-              ["Admin bilan bog'lanish"],
-            ])
-              .oneTime()
-              .resize(),
-          });
-          return;
-        }
-
-        switch (master.last_state) {
-          case "role":
-            let role: any;
-            if ("text" in ctx.message!) {
-              role = ctx.message.text;
-            }
-            master.role = role;
-            master.last_state = "name";
-            await master.save();
-            await ctx.reply("Ismizni kiriting:", {
-              parse_mode: "HTML",
-              ...Markup.removeKeyboard(),
-            });
-            break;
-
-          case "name":
-            master.first_name = userInput;
-            master.last_state = "phone";
-            await master.save();
-            await ctx.reply("Telefon raqamingizni kiriting:", {
-              parse_mode: "HTML",
-              ...Markup.removeKeyboard(),
-            });
-            break;
-
-          case "phone":
-            master.phone = userInput;
-            master.last_state = "workshop_name";
-            await master.save();
-            await ctx.reply("Ish manzilini kiriting:", {
-              parse_mode: "HTML",
-              ...Markup.removeKeyboard(),
-            });
-            break;
-
-          case "workshop_name":
-            master.workshop_name = userInput;
-            master.last_state = "address";
-            await master.save();
-            await ctx.reply("Ish joy nomi kiriting:", {
-              parse_mode: "HTML",
-              ...Markup.removeKeyboard(),
-            });
-            break;
-
-          case "address":
-            master.address = userInput;
-            master.last_state = "target";
-            await master.save();
-            await ctx.reply("Mo'ljalni kiriting:", {
-              parse_mode: "HTML",
-              ...Markup.removeKeyboard(),
-            });
-            break;
-
-          case "target":
-            master.target = userInput;
-            master.last_state = "location";
-            await master.save();
-            await ctx.reply("Locationni kiriting", {
-              parse_mode: "HTML",
-              ...Markup.removeKeyboard(),
-            });
-            break;
-
-          case "location":
-            master.location = userInput;
-            master.last_state = "start_time";
-            await master.save();
-            await ctx.reply("Ish boshlanish vaqtini kiriting:", {
-              parse_mode: "HTML",
-              ...Markup.removeKeyboard(),
-            });
-            break;
-
-          case "start_time":
-            master.start_time = userInput;
-            master.last_state = "end_time";
-            await master.save();
-            await ctx.reply("Ish tugash vaqtini kiriting:", {
-              parse_mode: "HTML",
-              ...Markup.removeKeyboard(),
-            });
-            break;
-
-          case "end_time":
-            master.end_time = userInput;
-            master.last_state = "customer_time";
-            await master.save();
-            await ctx.reply("Qancha vaqt ketadi bitta odamga", {
-              parse_mode: "HTML",
-              ...Markup.removeKeyboard(),
-            });
-            break;
-
-          case "customer_time":
-            master.customer_time = userInput;
-            master.last_state = "finish";
-            await master.save();
-            await ctx.replyWithHTML(`Saqlansinmi?`, {
-              ...Markup.keyboard([["Saqlash", "Bekor qilish"]]),
-            });
-            break;
-        }
-      } else {
-        await ctx.replyWithHTML(`Saqlandi`, {
+  async register(ctx: Context) {
+    if ("text" in ctx.message!) {
+      try {
+        const user_id = ctx.from?.id;
+        await this.masterModel.create({
+          user_id: user_id!,
+          last_state: "specialization",
+        });
+        await ctx.replyWithHTML(`Kerakli yo'nalishni tanlang:`, {
           ...Markup.keyboard([
-            ["Tekshirish", "Bekor qilish"],
-            ["Admin bilan bog'lanish"],
+            [
+              "SARTAROSHXONA",
+              "GO'ZALLIK SALONI",
+              "ZARGARLIK USTAXONASI",
+              "SOATSOZ",
+              "POYABZAL USTAXONASI",
+            ],
           ])
             .oneTime()
             .resize(),
         });
+      } catch (error) {
+        console.log(`Error on master register`, error);
+      }
+    }
+  }
+
+  async onLocation(ctx: Context) {
+    try {
+      const id = ctx.from?.id;
+      const master = await this.masterModel.findOne({
+        where: {
+          user_id: id,
+          last_state: "location",
+        },
+      });
+      if (master && "location" in ctx.message!) {
+        const { latitude, longitude } = ctx.message.location!;
+        master.location = `${latitude} | ${longitude}`;
+        master.last_state = "start_time";
+        await master.save();
+        await ctx.replyWithHTML(`Ish boshlash vaqtingizni kiriting:`, {
+          ...Markup.removeKeyboard(),
+        });
       }
     } catch (error) {
-      console.log(`Error on Master Start`, error);
+      console.log("Error on location:", error);
     }
+  }
+
+  async onContact(ctx: Context) {
+    try {
+      const user_id = ctx.from?.id;
+      const master = await this.masterModel.findOne({ where: { user_id } });
+      if (master && master.last_state == "tel_number") {
+        if ("contact" in ctx.message!) {
+          let phone = ctx.message.contact.phone_number;
+          if (phone[0] != "+") {
+            phone = "+" + phone;
+          }
+          master.telefon_number = phone;
+          master.last_state = "ustaxona_nomi";
+          await master.save();
+          await ctx.replyWithHTML(`Ishlash joyingizni nomini kiriting:`, {
+            ...Markup.removeKeyboard(),
+          });
+        }
+      }
+    } catch (error) {
+      console.log(`Error on method "onContact"`, error);
+    }
+  }
+
+  async onConfirmation(ctx: Context) {
+    const user_id = ctx.from?.id;
+    const master = await this.masterModel.findOne({ where: { user_id } });
+    await ctx.replyWithHTML(
+      `Sizni malumotlaringiz adminga yuborildi. Iltimos admin tasdiqlashini kuting`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "Tekshirish",
+                callback_data: `check_${master?.id}`,
+              },
+              {
+                text: "Bekor qilish",
+                callback_data: `cancel_${master?.id}`,
+              },
+            ],
+          ],
+        },
+      }
+    );
+  }
+
+  async onCancel(ctx: Context) {
+    const user_id = ctx.from?.id;
+    const master = await this.masterModel.findOne({ where: { user_id } });
+    await master?.destroy();
+    await ctx.replyWithHTML(`Siz kiritgan ma'lumotlar bekor qilindi`, {
+      ...Markup.keyboard([["/start"]])
+        .oneTime()
+        .resize(),
+    });
   }
 }

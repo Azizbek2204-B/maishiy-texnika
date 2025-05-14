@@ -25,7 +25,7 @@ import { BOT_NAME } from "./app.constants";
       database: process.env.PG_DB,
       models: [],
       autoLoadModels: true,
-      sync: { force: true },
+      sync: { alter: true },
       logging: false,
     }),
     BotModule,

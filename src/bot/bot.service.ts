@@ -63,7 +63,7 @@ export class BotService {
               await ctx.replyWithHTML(
                 `Ishlash joyingizni manzilini kiriting:`,
                 {
-                  ...Markup.removeKeyboard(),
+                  ...Markup.removeKeyboard()
                 }
               );
               break;
@@ -119,20 +119,9 @@ export class BotService {
               await ctx.replyWithHTML(
                 `Siz barcha kerakli ma'lumotlarni kiritdingiz`,
                 {
-                  reply_markup: {
-                    inline_keyboard: [
-                      [
-                        {
-                          text: "Tasdiqlash",
-                          callback_data: `con_${master.id}`,
-                        },
-                        {
-                          text: "Bekor qilish",
-                          callback_data: `cancel_${master.id}`,
-                        },
-                      ],
-                    ],
-                  },
+                  ...Markup.keyboard([["Tasdiqlash", "Bekor qilish"]])
+                    .oneTime()
+                    .resize(),
                 }
               );
               break;

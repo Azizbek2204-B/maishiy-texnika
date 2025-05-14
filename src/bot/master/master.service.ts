@@ -23,9 +23,9 @@ export class MasterService {
           ...Markup.keyboard([
             [
               "SARTAROSHXONA",
-              "GO'ZALLIK SALONI",
+              "GO'ZALLIK SALONI",],[
               "ZARGARLIK USTAXONASI",
-              "SOATSOZ",
+              "SOATSOZ",],[
               "POYABZAL USTAXONASI",
             ],
           ])
